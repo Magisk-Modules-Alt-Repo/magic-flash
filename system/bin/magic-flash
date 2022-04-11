@@ -1,0 +1,46 @@
+#!/system/bin/sh
+export PATH=/sbin:/dev/sbin:/system/bin:/system/xbin
+exec 2>/dev/null
+VALUE="$1"
+abort(){
+echo "$1"
+exit 1
+}
+flash(){
+for zip in $@; do
+flash_process "$zip"
+done
+}
+flash_process(){
+ZIP="$1"
+[ "$DEBUG" == 1 ] && { set -x; exec 2>&1; }
+[ "$ZIP" == "flash" ] && unset ZIP
+test -z "$ZIP" && abort "! Please provide a zip"
+test "$(id -u)" == 0 || abort "! Root user only"
+TMPBINDIR=/sbin
+[ ! -d /sbin ] && TMPBINDIR=/dev/sbin
+mkdir $TMPBINDIR 2>/dev/null
+if [ ! -z "$(magisk -v)" ]; then
+echo "Found Magisk: $(magisk -v)"
+PATH="$(magisk --path)/.magisk/busybox:$PATH"
+fi
+which busybox &>/dev/null || abort "! Busybox not found"
+[ ! -e "$(which busybox)" ] && abort "! Busybox not found"
+echo "Prepare environment for flashing..."
+cp $(which busybox) /dev/busybox
+mount -t tmpfs tmpfs -o mode=0755 $TMPBINDIR
+cp /dev/busybox $TMPBINDIR/busybox
+chmod 777 $TMPBINDIR/busybox
+$TMPBINDIR/busybox --install -s $TMPBINDIR
+TMPDIR=/dev/tmp
+mkdir /dev/tmp
+unzip -oj "$ZIP" "META-INF/com/google/android/update-binary" -d "$TMPBINDIR" &>/dev/null
+echo "Flashing \"$ZIP\""
+chmod 777 "$TMPBINDIR/update-binary"
+if [ "$(cat "$TMPBINDIR/update-binary" | head -1 | awk '{ print $1 }')" == "#!/sbin/sh" ] && [ "$TMPBINDIR" == "/dev/sbin" ]; then
+sed -i 's+#!/sbin/sh+#!/dev/sbin/sh+' "$TMPBINDIR/update-binary"
+fi
+$TMPBINDIR/update-binary 3 1 "$ZIP"
+umount -l $TMPBINDIR
+}
+if [ "$VALUE" == "flash" ]; then exec $@; elif [ ! -z "$1" ]; then exec unshare -m sh "$0" flash $@; else echo -e "Flash any recovery zip without using Custom Recovery\nFlashing will be processed in isolated mount namespace\n usage: $(basename $0) [ZIP...]"; fi
