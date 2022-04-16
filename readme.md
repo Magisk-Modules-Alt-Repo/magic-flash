@@ -1,7 +1,5 @@
 ## Magic ToolFlash
 
-**This module has been migrated to [Magisk-Modules-Alt-Repo](https://github.com/Magisk-Modules-Alt-Repo/magic-flash)**
-
 An android CLI flash tool without custom recoveries. Usage in Terminal Emulator or Termux with Root access: 
 ```
 flash [ZIP...]
