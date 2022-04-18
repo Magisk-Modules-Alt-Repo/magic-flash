@@ -11,5 +11,5 @@ flash [ZIP...]
 
 ### Known issues
 
-- The flashable zip that uses `/tmp` as temporary files will not work as `/tmp` does not exist on Android root directory. Please prefer to use `/dev/tmp` as temporary directory.
+- The flashable zip that uses `/tmp` as temporary directory will not work as `/tmp` does not exist on Android root directory. Please prefer to use `/dev/tmp` as temporary directory.
 - The flashable zip hardcoded `/sbin` in command might not work because `/sbin` doesn't always exist on Android 11+ 
