@@ -61,7 +61,7 @@ flash_process(){
      cp "$(command -v busybox)" /dev/rootfs/sbin/busybox
      
      #install busybox into path
-     /dev/rootfs/sbin/busybox --install -s /dev/rootfs/sbin
+     /dev/rootfs/sbin/busybox --install /dev/rootfs/sbin
 
       export TMPDIR=/tmp
       mkdir /dev/rootfs/tmp
