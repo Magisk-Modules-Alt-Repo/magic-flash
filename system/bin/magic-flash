@@ -1,5 +1,5 @@
 #!/system/bin/sh
-export PATH=/sbin:/dev/sbin:/system/bin:/system/xbin
+export PATH=/sbin:/data/adb/modules/magic-flash/busybox:/system/bin:/system/xbin
 exec 2>/dev/null
 VALUE="$1"
 abort(){
@@ -144,7 +144,7 @@ flash_process(){
 if [ "$VALUE" == "flash" ]; then
     exec "$@"; 
 elif [ ! -z "$1" ]; then 
-    exec unshare -m sh "$0" flash "$@";
+    exec busybox unshare -m sh "$0" flash "$@";
 else 
     echo -e "Flash any recovery zip without using Custom Recovery\nFlashing will be processed in isolated chroot evironment\nMultiple flashing at same time are allowed\nMake sure the current environment is clean\n usage: $(basename "$0") ZIP\n        $(basename "$0") ZIP1 ZIP2...\n environment variable flag:\n   NOSYSTEM=0 - Ignore mount system partition in chroot\n   SYSTEM_MODE=ro - Remount all system partitions as read-only \n   SYSTEM_MODE=rw - Remount all system partitions as read-write\n   DEBUG=1 - Show all error dialogs"; 
 fi
