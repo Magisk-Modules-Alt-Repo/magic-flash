@@ -5,7 +5,7 @@ An android CLI flash tool without custom recoveries. Usage in Terminal Emulator 
 flash [ZIP...]
 ```
 
-Path to ZIP should be full and multiple ZIP at same time are allowed.
+Path to ZIP should be full and multiple ZIP at same time are allowed. **Busybox must be installed!!**
 
 <img src="https://github.com/HuskyDG/huskydg.github.io/raw/main/img/Screenshot_20220411-162531_Terminal_Emulator.png" width="500px"/>
 
