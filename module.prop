@@ -1,6 +1,6 @@
 id=magic-flash
 name=Magic FlashTool (Terminal Emulator)
-version=v1.3
-versionCode=10003
+version=v1.4
+versionCode=10004
 author=HuskyDG
 description=An android CLI flash tool without custom recoveries. Usage: flash [ZIP...]

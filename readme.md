@@ -13,6 +13,13 @@ Android environment will no longer be used. Instead, Magic FlashTool will create
 
 **IMPORTANT: Only use this for flashing mods zip (magisk module, magisk update, mods zip, ...) Do not use this tool to flash ROM while Android system is running because it will lead to bootloop**
 
+For testing, you can open shell in chroot enviroment with this command:
+
+```
+vmshell
+```
+
+
 ### Known issues
 
 - (Solved) ~~The flashable zip that uses `/tmp` as temporary directory will not work as `/tmp` does not exist on Android root directory. Please prefer to use `/dev/tmp` as temporary directory.~~

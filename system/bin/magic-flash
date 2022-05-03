@@ -6,12 +6,10 @@ abort(){
     echo "$1"
     exit 1
 }
-flash(){
-    test "$(id -u)" == 0 || abort "! Root user only!"
-    if [ ! -z "$(magisk -v)" ]; then
-        echo "Found Magisk: $(magisk -v)"
-        PATH="$(magisk --path)/.magisk/busybox:/sbin:/system/bin:/system/xbin"
-    fi
+
+
+
+make_chroot(){
     command -v busybox &>/dev/null || abort "! Busybox not found"
     [ ! -e "$(command -v busybox)" ] && abort "! Busybox not found"
 
@@ -33,13 +31,12 @@ flash(){
 
 
     [ -e $NEWROOT/bin ] || ln -s /system/bin $NEWROOT/bin
-    [ -e $NEWROOT/etc ] || ln -s /system/etc $NEWROOT/etc
     [ -e $NEWROOT/lib ] || ln -s /system/lib $NEWROOT/lib
     [ -e $NEWROOT/lib64 ] || ln -s /system/lib64 $NEWROOT/lib64
 
 
 
-    for dir in apex cache data sbin system/bin $vendor $system_ext $product sys proc dev sideload sdcard sysblock; do
+    for dir in apex cache data sbin system/bin $vendor $system_ext $product sys proc dev sideload sdcard sysblock etc; do
         mkdir -p $NEWROOT/$dir
     done
     
@@ -49,18 +46,31 @@ flash(){
      chmod 777 "$NEWROOT/system/bin/sh"
      
      cat /system/build.prop >"$NEWROOT/system/build.prop"
+      echo "proc /proc proc default 0 0
+sysfs /sys sysfs default 0 0
+/system/apex /apex ext4 bind 0 0" >>"$NEWROOT/etc/fstab"
     
      
-     if [ "$NOSYSTEM" != 1 ]; then
-         mount --bind /system $NEWROOT/system
-         for systemfs in /vendor /product /system_ext; do
-             if mountpoint -q $systemfs; then
+     
+         
+     for systemfs in /vendor /product /system_ext; do
+         if mountpoint -q $systemfs; then
+             if [ "$NOSYSTEM" != 1 ]; then
                  mount --bind $systemfs $NEWROOT/$systemfs
              fi
-         done
-     else
-         echo "NOSYSTEM: Ignore mount system partition"
-     fi
+                 system_major_minor="$(mountpoint -d $systemfs)"
+                 system_major="${system_major_minor%:*}"
+                 system_minor="${system_major_minor: ${#system_major}+1}"
+                 mknod -m 666 "$NEWROOT/sysblock/$systemfs" b "$system_major" "$system_minor"
+                 echo "/sysblock$systemfs $systemfs ext4 ro 0 0" >>"$NEWROOT/etc/fstab"
+         fi
+    done
+     
+    if [ "$NOSYSTEM" == 1 ]; then
+         echo "NOSYSTEM: Ignored mount system partition!"
+    else
+         mount --bind /system $NEWROOT/system 
+    fi
     
 
      sysroot_major_minor="$(mountpoint -d /)"
@@ -69,10 +79,18 @@ flash(){
      if [ "$sysroot_major" != "0" ]; then
          echo "Device is system-as-root"
          mknod -m 666 "$NEWROOT/sysblock/system_root" b "$sysroot_major" "$sysroot_minor"
+         echo "/sysblock/system_root /system_root ext4 ro 0 0
+/system_root/system /system ext4 bind 0 0" >>"$NEWROOT/etc/fstab"
          mkdir "$NEWROOT/system_root"
          if [ "$NOSYSTEM" != 1 ]; then
              mount -o ro "$NEWROOT/sysblock/system_root" "$NEWROOT/system_root"
          fi
+     else
+         system_major_minor="$(mountpoint -d /system)"
+         system_major="${system_major_minor%:*}"
+         system_minor="${system_major_minor: ${#system_major}+1}"
+         mknod -m 666 "$NEWROOT/sysblock/system" b "$system_major" "$system_minor"
+         echo "/sysblock/system /system ext4 ro 0 0" >>"$NEWROOT/etc/fstab"
      fi
 
      mount --bind /system/apex "$NEWROOT/apex"
@@ -106,6 +124,17 @@ flash(){
       export TMPDIR=/tmp
       mkdir $NEWROOT/tmp
       mount -t tmpfs tmpfs $NEWROOT/tmp
+}
+
+vmshell(){
+    make_chroot
+    $NEWROOT/sbin/busybox unshare -m $NEWROOT/sbin/busybox chroot $NEWROOT sh
+    umount -l $NEWROOT
+    rm -rf $NEWROOT
+}
+
+flash(){
+    make_chroot
     for zip in "$@"; do
         ( flash_process "$zip"; )
     done
@@ -130,21 +159,36 @@ flash_process(){
 
      
 
-    unzip -oj "$ZIP" "META-INF/com/google/android/update-binary" -d "$NEWROOT/sbin" &>/dev/null
+    busybox unzip -oj "$ZIP" "META-INF/com/google/android/update-binary" -d "$NEWROOT/sbin" #&>/dev/null
     echo "Flashing \"$ZIP_NAME\""
     chmod 777 "$NEWROOT/sbin/update-binary"
     
-    $NEWROOT/sbin/busybox chroot $NEWROOT "/sbin/update-binary" 3 1 "$ZIP_CHROOT"
+    $NEWROOT/sbin/busybox unshare -m $NEWROOT/sbin/busybox chroot $NEWROOT "/sbin/update-binary" 3 1 "$ZIP_CHROOT"
 
     
     echo "Flashing exists with code $?"
     
     
 }
-if [ "$VALUE" == "flash" ]; then
-    exec "$@"; 
-elif [ ! -z "$1" ]; then 
-    exec busybox unshare -m sh "$0" flash "$@";
-else 
-    echo -e "Flash any recovery zip without using Custom Recovery\nFlashing will be processed in isolated chroot evironment\nMultiple flashing at same time are allowed\nMake sure the current environment is clean\n usage: $(basename "$0") ZIP\n        $(basename "$0") ZIP1 ZIP2...\n environment variable flag:\n   NOSYSTEM=0 - Ignore mount system partition in chroot\n   SYSTEM_MODE=ro - Remount all system partitions as read-only \n   SYSTEM_MODE=rw - Remount all system partitions as read-write\n   DEBUG=1 - Show all error dialogs"; 
-fi
+
+case `basename "$0"` in
+  vmshell)
+    if [ "$VALUE" == "vmshell" ]; then
+        exec "$@"; 
+    else
+        test "$(id -u)" == 0 || abort "! Root user only!"
+        exec busybox unshare -m sh "$0" vmshell "$@";
+    
+    fi
+  ;;
+  *)
+    if [ "$VALUE" == "flash" ]; then
+        exec "$@"; 
+    elif [ ! -z "$1" ]; then 
+        test "$(id -u)" == 0 || abort "! Root user only!"
+        exec busybox unshare -m sh "$0" flash "$@";
+    else 
+        echo -e "Flash any recovery zip without using Custom Recovery\nFlashing will be processed in isolated chroot evironment\nMultiple flashing at same time are allowed\nMake sure the current environment is clean\n usage: $(basename "$0") ZIP\n        $(basename "$0") ZIP1 ZIP2...\n environment variable flag:\n   NOSYSTEM=1 - Ignore mount system partition in chroot\n   SYSTEM_MODE=ro - Remount all system partitions as read-only \n   SYSTEM_MODE=rw - Remount all system partitions as read-write\n   DEBUG=1 - Show all error dialogs"; 
+    fi
+  ;;
+esac
