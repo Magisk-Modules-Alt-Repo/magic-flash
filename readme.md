@@ -30,3 +30,7 @@ vmshell
 
 - (Solved) ~~The flashable zip that uses `/tmp` as temporary directory will not work as `/tmp` does not exist on Android root directory. Please prefer to use `/dev/tmp` as temporary directory.~~
 - (Solved) ~~The flashable zip hardcoded `/sbin` in command might not work because `/sbin` doesn't always exist on Android 11+~~
+
+### Credits
+
+- [Busybox NDK](https://github.com/Magisk-Modules-Repo/busybox-ndk) by [osm0sis](http://github.com/osm0sis)
