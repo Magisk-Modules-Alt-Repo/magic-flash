@@ -24,7 +24,6 @@ make_chroot(){
     chcon u:object_r:system_file:s0 /data/adb/sideload
     mount -t tmpfs tmpfs $NEWROOT || abort "! Failed to prepare chroot environment"
 
-
     mountpoint -q /vendor && vendor=vendor || ln -sf /system/vendor $NEWROOT/vendor
     mountpoint -q /system_ext && system_ext=system_ext || ln -sf /system/system_ext $NEWROOT/system_ext
     mountpoint -q /product && product=product || ln -sf /system/product $NEWROOT/product
@@ -36,16 +35,73 @@ make_chroot(){
 
 
 
-    for dir in apex cache data sbin system/bin $vendor $system_ext $product sys proc dev sideload sdcard sysblock etc; do
+    for dir in apex cache data sbin $vendor $system_ext $product sys proc dev sideload sdcard sysblock etc mnt; do
         mkdir -p $NEWROOT/$dir
     done
-    
+   
     mount -t tmpfs tmpfs $NEWROOT/sysblock
-    #make sure sh exists
-     cat "$(command -v busybox)" >"$NEWROOT/system/bin/sh"
-     chmod 777 "$NEWROOT/system/bin/sh"
+
+
+    if [ "$NOSYSTEM" == 1 ]; then
+         echo "NOSYSTEM: Ignored mount system partition!"
+    fi
+
+    # access to magisk bin
+    MAGISKTMP="$(magisk --path)"
+    if [ ! -z "$MAGISKTMP" ]; then
+        touch "$NEWROOT/sbin"/{magisk,magiskpolicy}
+        mount --bind "$MAGISKTMP/magisk" "$NEWROOT/sbin/magisk"
+        mount --bind "$MAGISKTMP/magiskpolicy" "$NEWROOT/sbin/magiskpolicy"
+        ln -s "./magisk" "$NEWROOT/sbin/su"
+        ln -s "./magisk" "$NEWROOT/sbin/resetprop"
+        ln -s "./magisk" "$NEWROOT/sbin/magiskhide"
+        ln -s "./magiskpolicy" "$NEWROOT/sbin/supolicy"
+     fi
+
+    prepare_sh(){
+         #make sure sh exists
+         cat "$(command -v busybox)" >"$NEWROOT/system/bin/sh"
+         chmod 777 "$NEWROOT/system/bin/sh"
+         cat /system/build.prop >"$NEWROOT/system/build.prop"
+    }
+
+    sysroot_major_minor="$(mountpoint -d /)"
+     sysroot_major="${sysroot_major_minor%:*}"
+     sysroot_minor="${sysroot_major_minor: ${#sysroot_major}+1}"
+     if [ "$sysroot_major" != "0" ]; then
+         echo "Device is system-as-root"
+         mknod -m 666 "$NEWROOT/sysblock/system_root" b "$sysroot_major" "$sysroot_minor"
+         echo "/sysblock/system_root /system_root ext4 ro 0 0" >>"$NEWROOT/etc/fstab"
+         mkdir -p "$NEWROOT/system_root/system/bin"
+         ln -sf "system_root/system" "$NEWROOT/system"
+         prepare_sh
+         if [ "$NOSYSTEM" != 1 ]; then
+             mount -o ro "$NEWROOT/sysblock/system_root" "$NEWROOT/system_root"
+         fi
+     else
+         system_major_minor="$(mountpoint -d /system)"
+         system_major="${system_major_minor%:*}"
+         system_minor="${system_major_minor: ${#system_major}+1}"
+         mkdir "$NEWROOT/system/bin"
+         prepare_sh
+         mknod -m 666 "$NEWROOT/sysblock/system" b "$system_major" "$system_minor"
+         echo "/sysblock/system /system ext4 ro 0 0" >>"$NEWROOT/etc/fstab"
+         if [ "$NOSYSTEM" != 1 ]; then
+             mount -o ro "$NEWROOT/sysblock/system" "$NEWROOT/system"
+         fi
+     fi
+     mkdir -p "$NEWROOT/mnt/vendor/persist"
+     ln -fs mnt/vendor/persist "$NEWROOT/persist"
+
+     for ext_part in /cache /mnt/vendor/persist /metadata; do
+         dev_mount="$(mount -t ext4 | grep " $ext_part " | tail -1 | awk '{ print $1 }')"
+         if [ ! -z "$dev_mount" ]; then
+             mount -t ext4 "$dev_mount" "$NEWROOT/$ext_part"
+             echo "$dev_mount $ext_part ext4 rw 0 0">>"$NEWROOT/etc/fstab"
+          fi
+     done
      
-     cat /system/build.prop >"$NEWROOT/system/build.prop"
+     
       echo "proc /proc proc default 0 0
 sysfs /sys sysfs default 0 0
 /system/apex /apex ext4 bind 0 0" >>"$NEWROOT/etc/fstab"
@@ -66,33 +122,10 @@ sysfs /sys sysfs default 0 0
          fi
     done
      
-    if [ "$NOSYSTEM" == 1 ]; then
-         echo "NOSYSTEM: Ignored mount system partition!"
-    else
-         mount --bind /system $NEWROOT/system 
-    fi
+    
     
 
-     sysroot_major_minor="$(mountpoint -d /)"
-     sysroot_major="${sysroot_major_minor%:*}"
-     sysroot_minor="${sysroot_major_minor: ${#sysroot_major}+1}"
-     if [ "$sysroot_major" != "0" ]; then
-         echo "Device is system-as-root"
-         mknod -m 666 "$NEWROOT/sysblock/system_root" b "$sysroot_major" "$sysroot_minor"
-         echo "/sysblock/system_root /system_root ext4 ro 0 0
-/system_root/system /system ext4 bind 0 0" >>"$NEWROOT/etc/fstab"
-         mkdir "$NEWROOT/system_root"
-         if [ "$NOSYSTEM" != 1 ]; then
-             mount -o ro "$NEWROOT/sysblock/system_root" "$NEWROOT/system_root"
-         fi
-     else
-         system_major_minor="$(mountpoint -d /system)"
-         system_major="${system_major_minor%:*}"
-         system_minor="${system_major_minor: ${#system_major}+1}"
-         mknod -m 666 "$NEWROOT/sysblock/system" b "$system_major" "$system_minor"
-         echo "/sysblock/system /system ext4 ro 0 0" >>"$NEWROOT/etc/fstab"
-     fi
-
+     
      mount --bind /system/apex "$NEWROOT/apex"
      mount --bind /dev "$NEWROOT/dev"
      mount --bind /data "$NEWROOT/data"
@@ -100,6 +133,21 @@ sysfs /sys sysfs default 0 0
      mount --bind /sdcard "$NEWROOT/sdcard"
      mount -t sysfs sysfs "$NEWROOT/sys"
      mount -t proc proc "$NEWROOT/proc"
+
+     # selinux stuff
+     if [ "$SELINUX" == 1 ]; then
+         mount -t selinuxfs selinuxfs "$NEWROOT/sys/fs/selinux"
+     else
+        mount -t tmpfs selinuxfs "$NEWROOT/sys/fs/selinux"
+        echo -n "0" >"$NEWROOT/sys/fs/selinux/enforce"
+        echo -n >"$NEWROOT/sys/fs/selinux/policy"
+     fi
+
+     if [ "${MAGISKTMP%/*}" == "/dev" ]; then
+         mount -t tmpfs tmpfs "$NEWROOT/$MAGISKTMP"
+         ln -fs "/proc/$$/root/$MAGISKTMP/.magisk" "$NEWROOT/$MAGISKTMP/.magisk"
+     fi
+     ln -fs "/proc/$$/root/$MAGISKTMP/.magisk" "$NEWROOT/sbin/.magisk"
 
      if [ "$NOSYSTEM" != 1 ]; then
          if [ "$SYSTEM_MODE" == "ro" ]; then
@@ -128,7 +176,8 @@ sysfs /sys sysfs default 0 0
 
 vmshell(){
     make_chroot
-    $NEWROOT/sbin/busybox unshare -m $NEWROOT/sbin/busybox chroot $NEWROOT sh
+    exec 2>&1
+    $NEWROOT/sbin/busybox unshare -m $NEWROOT/sbin/busybox chroot $NEWROOT /sbin/sh
     umount -l $NEWROOT
     rm -rf $NEWROOT
 }
