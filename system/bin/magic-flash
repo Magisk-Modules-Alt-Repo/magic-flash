@@ -82,7 +82,7 @@ make_chroot(){
          system_major_minor="$(mountpoint -d /system)"
          system_major="${system_major_minor%:*}"
          system_minor="${system_major_minor: ${#system_major}+1}"
-         mkdir "$NEWROOT/system/bin"
+         mkdir -p "$NEWROOT/system/bin"
          prepare_sh
          mknod -m 666 "$NEWROOT/sysblock/system" b "$system_major" "$system_minor"
          echo "/sysblock/system /system ext4 ro 0 0" >>"$NEWROOT/etc/fstab"
